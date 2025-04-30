@@ -5,11 +5,15 @@ Example of how to use the wildfire evacuation RL environment.
 import gymnasium
 import numpy as np
 import pyrorl
+from src.environment.Wildfire_env import WildfireEnv
 
 if __name__ == "__main__":
     """
     Run basic environment.
     """
+    # Set up the environment
+    #env = WildfireEnv(10, 10, 
+
     # Set up parameters
     num_rows, num_cols = 10, 10
     populated_areas = np.array([[1, 2], [4, 8], [6, 4], [8, 7]])
@@ -35,16 +39,17 @@ if __name__ == "__main__":
         6: [[6, 4]],
     }
 
-    # Create environment
-    kwargs = {
-        "num_rows": num_rows,
-        "num_cols": num_cols,
-        "populated_areas": populated_areas,
-        "paths": paths,
-        "paths_to_pops": paths_to_pops,
-    }
-    env = gymnasium.make("pyrorl/PyroRL-v0", **kwargs)
-
+    env_ = WildfireEnv(
+        num_rows=num_rows,
+        num_cols=num_cols,
+        populated_areas=populated_areas,
+        paths=paths,
+        paths_to_pops=paths_to_pops,
+    )
+    env = env_.create_env()
+    
+    #env_.add_barrier(env, num_barriers=5)
+   
     # Run a simple loop of the environment
     env.reset()
     for _ in range(10):
