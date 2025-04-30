@@ -34,7 +34,7 @@ class WildfireEnv():
     def add_barrier(self, env, num_barriers) -> None:
         """
         !!Currently doesn't work!!
-
+        
         Add a barrier to the environment.
 
         Args:
