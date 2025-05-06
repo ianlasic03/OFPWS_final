@@ -67,10 +67,13 @@ if __name__ == "__main__":
         observation, reward, terminated, truncated, info = env.step(action)
         #print("observation: ", observation[1])
         #print("observation shape: ", observation[1].shape)
-        
+        total_burned_area = env.burned_area()
+        print("Current burned area: ", total_burned_area, "\n")
         # Render environment and print reward
         env.render()
         print("Reward: " + str(reward))
-
+    
+    total_burned_area = env.burned_area()
+    print("Final area burned: ", total_burned_area, "\n")
     # Generate the gif
     env.unwrapped.generate_gif()

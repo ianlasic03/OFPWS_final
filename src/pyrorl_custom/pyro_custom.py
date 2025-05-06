@@ -276,6 +276,20 @@ class WildfireEvacuationEnv(gym.Env):
                 running = False
         pygame.quit()
 
+    def burned_area(self):
+        """
+        Quantify total amount of area burned 
+        """
+        state_space = self.fire_env.get_state()
+        (_, rows, cols) = state_space.shape
+        burned_area = 0
+        # loop through each state
+        for x in range(cols):
+                for y in range(rows):
+                    if state_space[0][y][x] == 1:
+                        burned_area += 1
+        return burned_area
+
     def generate_gif(self):
         """
         Save run as a GIF.
