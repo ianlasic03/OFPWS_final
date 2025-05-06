@@ -1,8 +1,8 @@
 """
 OpenAI Gym Environment Wrapper Class
 """
-
-from pyrorl.envs.environment.environment import FireWorld
+from src.environment.environment_custom import FireWorld
+#from pyrorl.envs.environment.environment import FireWorld
 from src.environment.barriers import Barriers
 import gymnasium as gym
 from gymnasium import spaces
@@ -107,11 +107,15 @@ class WildfireEvacuationEnv(gym.Env):
         # Add barriers to the environment (random selection for now)
         # Optimize placement of barriers
         barrier_manager = Barriers(
-            env=self.fire_env,
+            env=self.fire_env, paths=self.paths, paths_to_pops=self.paths_to_pops,
             populated_areas=self.populated_areas,
             num_barriers=5          
         )
         self.barriers = barrier_manager.add_barrier()
+        print("barriers in pyro: ", self.barriers)
+        # Here, set the probability of burning for each barrier cell to zero
+        # Can I just call sample_fire_propogation again here now that barriers are defined?
+
 
         state_space = self.fire_env.get_state()
         return state_space, {"": ""}
@@ -122,7 +126,8 @@ class WildfireEvacuationEnv(gym.Env):
         """
         # Take the action and advance to the next timestep
         self.fire_env.set_action(action)
-        self.fire_env.advance_to_next_timestep()
+        # Add barriers as an argument here
+        self.fire_env.advance_to_next_timestep(self.barriers)
 
         # Gather observations and rewards
         observations = self.fire_env.get_state()
@@ -238,8 +243,6 @@ class WildfireEvacuationEnv(gym.Env):
                 for y in range(rows):
                     # Set color of the square
                     color = GRASS_COLOR
-                    # Barrier will be not able to burn -> white and check if it's acutally a barrier 
-                    # Not just a random cell with fuel_index 0
                     if (y, x) in self.barriers:
                         color = BARRIER_COLOR
                     if state_space[4][y][x] > 0:
