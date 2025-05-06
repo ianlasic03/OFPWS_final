@@ -107,7 +107,7 @@ class WildfireEvacuationEnv(gym.Env):
         # Add barriers to the environment (random selection for now)
         # Optimize placement of barriers
         barrier_manager = Barriers(
-            env=self.fire_env, paths=self.paths, paths_to_pops=self.paths_to_pops,
+            env=self.fire_env, paths=self.paths,
             populated_areas=self.populated_areas,
             num_barriers=5          
         )

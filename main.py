@@ -61,7 +61,6 @@ if __name__ == "__main__":
     env.reset()
 
     for _ in range(10):
-
         # Take action and observation
         action = env.action_space.sample()
         observation, reward, terminated, truncated, info = env.step(action)

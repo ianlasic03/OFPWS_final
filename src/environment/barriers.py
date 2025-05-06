@@ -4,18 +4,18 @@ import pyrorl
 #from src.pyrorl_custom.pyro_custom import WildfireEvacuationEnv
 
 class Barriers():
-    def __init__(self, env, paths, paths_to_pops, populated_areas, num_barriers):
+    def __init__(self, env, paths, populated_areas, num_barriers):
         """
         Initialize the environment  with the given parameters.
         """
         self.num_barriers = num_barriers
         self.fire_env = env
         self.paths = paths
-        self.paths_to_pops = paths_to_pops
         self.populated_areas = populated_areas
         self.num_barriers = num_barriers
         self.barriers = set()
 
+    # Input state space into this function because we are calling barriers in environment custom now 
     def add_barrier(self) -> set:
         """
         At the begining of the simualtion, add a barrier to the environment.
