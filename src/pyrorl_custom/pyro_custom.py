@@ -12,6 +12,7 @@ import os
 import pygame
 import shutil
 import sys
+import random
 from typing import Optional, Any
 
 # Constants for visualization
@@ -33,6 +34,7 @@ class WildfireEvacuationEnv(gym.Env):
         populated_areas: np.ndarray,
         paths: np.ndarray,
         paths_to_pops: dict,
+        barriers: set,
         custom_fire_locations: Optional[np.ndarray] = None,
         wind_speed: Optional[float] = None,
         wind_angle: Optional[float] = None,
@@ -50,6 +52,7 @@ class WildfireEvacuationEnv(gym.Env):
         self.populated_areas = populated_areas
         self.paths = paths
         self.paths_to_pops = paths_to_pops
+        self.barriers = barriers
         self.custom_fire_locations = custom_fire_locations
         self.wind_speed = wind_speed
         self.wind_angle = wind_angle
@@ -71,6 +74,9 @@ class WildfireEvacuationEnv(gym.Env):
             fire_propagation_rate=fire_propagation_rate,
         )
 
+        # Apply barriers to the fire_env
+        self.apply_barriers()
+
         # Set up action space
         actions = self.fire_env.get_actions()
         self.action_space = spaces.Discrete(len(actions))
@@ -84,6 +90,13 @@ class WildfireEvacuationEnv(gym.Env):
         # Create directory to store screenshots
         if os.path.exists(IMG_DIRECTORY) is False:
             os.mkdir(IMG_DIRECTORY)
+
+    def apply_barriers(self):
+        """
+        Apply barriers to the fire_env by setting the fuel index to 0 for barrier locations.
+        """
+        for r, c in self.barriers:
+            self.fire_env.state_space[1][r][c] = 0  # Set fuel index to 0
 
     def reset(
         self, seed: Optional[int] = None, options: Optional[dict[str, Any]] = None
@@ -103,22 +116,18 @@ class WildfireEvacuationEnv(gym.Env):
             fuel_stdev=self.fuel_stdev,
             fire_propagation_rate=self.fire_propagation_rate,
         )
-
-        # Add barriers to the environment (random selection for now)
-        # Optimize placement of barriers
-        barrier_manager = Barriers(
+        """barrier_manager = Barriers(
             env=self.fire_env, paths=self.paths,
             populated_areas=self.populated_areas,
             num_barriers=5          
         )
-        self.barriers = barrier_manager.add_barrier()
-        print("barriers in pyro: ", self.barriers)
-        # Here, set the probability of burning for each barrier cell to zero
-        # Can I just call sample_fire_propogation again here now that barriers are defined?
-
+        # Run with random placement of barriers
+        self.barriers = barrier_manager.add_barrier()"""
+        self.apply_barriers()
 
         state_space = self.fire_env.get_state()
         return state_space, {"": ""}
+
 
     def step(self, action: int) -> tuple:
         """
@@ -276,19 +285,59 @@ class WildfireEvacuationEnv(gym.Env):
                 running = False
         pygame.quit()
 
-    def burned_area(self):
+    def burned_area(self, fire_env=None):
         """
-        Quantify total amount of area burned 
+        Quantify total amount of area burned.
+        If a specific fire_env is provided, use it; otherwise, use self.fire_env.
         """
-        state_space = self.fire_env.get_state()
+        fire_env = fire_env or self.fire_env
+        state_space = fire_env.get_state()
         (_, rows, cols) = state_space.shape
         burned_area = 0
-        # loop through each state
+        # Loop through each state
         for x in range(cols):
-                for y in range(rows):
-                    if state_space[0][y][x] == 1:
-                        burned_area += 1
+            for y in range(rows):
+                if state_space[0][y][x] == 1:
+                    burned_area += 1
         return burned_area
+    
+    # Check this, it always returns 0, not working right 
+    def objective(self, barriers):
+        self.reset()
+        self.barriers = barriers             # apply candidate
+        done = False
+        while not done:
+            action = self.action_space.sample()
+            obs, reward, done,_,_ = self.step(action)
+        # How to I get this simulated environment?
+        env = self
+        environment = self.fire_env
+        return self.burned_area(self.fire_env)
+
+    def propose(self, B):
+        # e.g. pick one barrier cell at random and move it to a new empty location
+        B_prime = B.copy()
+
+        paths = self.paths
+        populated = self.populated_areas
+        flatten_paths = np.vstack([np.array(p) for p in paths])
+        
+        # Cells not valid for barriers, populated and path cells (Therefore barriers are on grass cells)
+        invalid_cells = np.vstack((populated, flatten_paths))
+        #print("What barrier looks like: ", B)
+        #print("Shape of barrier: ", len(B))
+        i = random.choice(list(B))
+        B_prime.remove(i)
+        # Do I need to subtract 1 from the rows and cols here?
+        new_barrier = tuple(np.random.randint(0, [self.num_rows, self.num_cols])) # Should produce a cell (x, y) in the environment
+        #new_barrier = tuple(np.random.randint(0, [self.rows, self.cols])) # Should produce a cell (x, y) in the environment
+        # NEED to check this logic (seems like barriers that aren't in conflict are not getting accepted)
+        while new_barrier in B_prime or new_barrier in invalid_cells:
+            new_barrier = tuple(np.random.randint(0, [self.num_rows, self.num_cols]))
+            print("new barrier location: ", new_barrier)
+        B_prime.add(new_barrier)
+        return B_prime
+
 
     def generate_gif(self):
         """

@@ -209,68 +209,42 @@ class FireWorld:
         """
         Sample the next state of the wildfire model.
         """
-    # … your existing burn‐out code …
-     #print("are barriers there in the beginning: ", barriers, "\n")
-    # Drops fuel level of enflamed cells
+         # Drops fuel level of enflamed cells
         self.state_space[FUEL_INDEX, self.state_space[FIRE_INDEX] == 1] -= 1
         self.state_space[FUEL_INDEX, self.state_space[FUEL_INDEX] < 0] = 0
 
         # Extinguishes cells that have run out of fuel
         self.state_space[FIRE_INDEX, self.state_space[FUEL_INDEX, :] <= 0] = 0
-        # 1) Extract 5×5 neighborhood of fire
+
+        # Runs kernel of neighborhing cells where each row
+        # corresponds to the neighborhood of a cell
         torch_rep = torch.tensor(self.state_space[FIRE_INDEX]).unsqueeze(0)
-        unfold    = torch.nn.Unfold((5,5), dilation=1, padding=2)
-        z_fire    = unfold(torch_rep)           # (1,25,H*W)
+        y = torch.nn.Unfold((5, 5), dilation=1, padding=2)
+        z = y(torch_rep)
 
         # The relative importance of each neighboring cell is weighted
-        z = z_fire * self.fire_mask
+        z = z * self.fire_mask
+
+        # Unenflamed cells are set to 1 to eliminate their role to the
+        # fire spread equation
         z[z == 0] = 1
         z = z.prod(dim=0)
         z = 1 - z.reshape(self.state_space[FIRE_INDEX].shape)
-        print("z without barrier mask: ", z, "\n")
-
 
         # From the probability of an ignition in z, new fire locations are
         # randomly generated
         prob_mask = torch.rand_like(z)
         new_fire = (z > prob_mask).float()
-        #print("prob mask without the barrier_mask: ", prob_mask, "\n")
 
-
-        # Compare with barrier  mask added
-        # 2) Extract 5×5 neighborhood of barrier mask
-        barrier_mask = np.zeros(self.state_space.shape[1:], dtype=float)
-        for r,c in barriers:
-            barrier_mask[r,c] = 1.0
-        barrier_t = torch.tensor(barrier_mask).unsqueeze(0)
-        z_barrier = unfold(barrier_t)           # (1,25,H*W)
-
-        # 3) Weight neighbors by both base kernel and barrier shielding
-        # Adjust this parameter to adjust/strengthen the effect barriers have on neighboring ignition prob
-        # Higher alpha -> lower prob of ignition 
-        # lower alpha -> higher prob of ignition
-        alpha = 0.1  # shield strength
-        per_patch_shield = (1 - z_barrier) + z_barrier * alpha
-        z_bar = z_fire * self.fire_mask.unsqueeze(0) * per_patch_shield
-
-        # 4) Compute ignition probability
-        z_bar[z_bar == 0] = 1 # z_
-        z_bar = z_bar.prod(dim=1).reshape(self.state_space[FIRE_INDEX].shape)
-        ignition_prob_bar = 1 - z_bar
-        print("z_bar with barrier mask: ", ignition_prob_bar, "\n")
-
-        # 5) Sample new fires
-        prob_mask_bar = torch.rand_like(ignition_prob_bar)
-        new_fire_bar  = (ignition_prob_bar > prob_mask_bar).float().numpy()
-        #print("prob_mask with the barrier_mask: ", prob_mask_bar, "\n")
-
-
-        # 6) Update fire, then forcibly clear barrier cells
-        #self.state_space[FIRE_INDEX] = np.maximum(new_fire, self.state_space[FIRE_INDEX])
-        self.state_space[FIRE_INDEX] = np.maximum(new_fire_bar, self.state_space[FIRE_INDEX])
+        # These new fire locations are added to the state
+        self.state_space[FIRE_INDEX] = np.maximum(
+            np.array(new_fire), self.state_space[FIRE_INDEX]
+        )
+        
 
         for r,c in barriers:
-            self.state_space[FIRE_INDEX, r, c] = 0
+            self.state_space[FIRE_INDEX][c][r] = 0
+            self.state_space[FUEL_INDEX][c][r] = 0
 
 
     def update_paths_and_evactuations(self):
@@ -375,8 +349,10 @@ class FireWorld:
 
         Add barriers as argument 
         """
-        print("barriers in environment: ", barriers)
+        #print("barriers in environment: ", barriers)
         self.sample_fire_propogation(barriers)
+        #print("barriers in environment after sampled new state: ", barriers)
+
         self.update_paths_and_evactuations()
         self.accumulate_reward()
         self.time_step += 1
