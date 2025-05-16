@@ -314,7 +314,7 @@ class WildfireEvacuationEnv(gym.Env):
             results.append(self.burned_area())
         return sum(results) / len(results)
         
-    
+        
     def propose(self, B):
         B_prime = B.copy()
         paths = self.paths
