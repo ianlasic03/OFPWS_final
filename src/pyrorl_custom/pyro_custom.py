@@ -314,31 +314,6 @@ class WildfireEvacuationEnv(gym.Env):
             results.append(self.burned_area())
         return sum(results) / len(results)
         
-    """def propose(self, B):
-        # e.g. pick one barrier cell at random and move it to a new empty location
-        B_prime = B.copy()
-
-        paths = self.paths
-        populated = self.populated_areas
-        flatten_paths = np.vstack([np.array(p) for p in paths])
-        
-        # Cells not valid for barriers, populated and path cells (Therefore barriers are on grass cells)
-        invalid_cells = np.vstack((populated, flatten_paths))
-        #print("What barrier looks like: ", B)
-        #print("Shape of barrier: ", len(B))
-        i = random.choice(list(B))
-        B_prime.remove(i)
-        # Do I need to subtract 1 from the rows and cols here?
-        new_barrier = tuple(np.random.randint(0, [self.num_rows, self.num_cols])) # Should produce a cell (x, y) in the environment
-        #new_barrier = tuple(np.random.randint(0, [self.rows, self.cols])) # Should produce a cell (x, y) in the environment
-        # NEED to check this logic (seems like barriers that aren't in conflict are not getting accepted)
-        # This while loop might be causing the program to stall?
-        while new_barrier in B_prime or new_barrier in invalid_cells:
-            new_barrier = tuple(np.random.randint(0, [self.num_rows, self.num_cols]))
-        B_prime.add(new_barrier)
-        print("new barrier location: ", new_barrier)
-
-        return B_prime"""
     
     def propose(self, B):
         B_prime = B.copy()
