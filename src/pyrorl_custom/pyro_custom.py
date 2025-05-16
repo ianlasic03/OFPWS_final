@@ -302,19 +302,19 @@ class WildfireEvacuationEnv(gym.Env):
         return burned_area
     
     # Check this, it always returns 0, not working right 
-    def objective(self, barriers):
-        self.reset()
-        self.barriers = barriers             # apply candidate
-        done = False
-        while not done:
-            action = self.action_space.sample()
-            obs, reward, done,_,_ = self.step(action)
-        # How to I get this simulated environment?
-        env = self
-        environment = self.fire_env
-        return self.burned_area(self.fire_env)
-
-    def propose(self, B):
+    def objective(self, barriers, trials=10):
+        results = []
+        for _ in range(trials):
+            self.reset()
+            self.barriers = barriers
+            #done = False
+            for _ in range(10): # Go through 10 timesteps
+                a = self.action_space.sample()
+                _, _, done, _, _ = self.step(a)
+            results.append(self.burned_area())
+        return sum(results) / len(results)
+        
+    """def propose(self, B):
         # e.g. pick one barrier cell at random and move it to a new empty location
         B_prime = B.copy()
 
@@ -332,10 +332,41 @@ class WildfireEvacuationEnv(gym.Env):
         new_barrier = tuple(np.random.randint(0, [self.num_rows, self.num_cols])) # Should produce a cell (x, y) in the environment
         #new_barrier = tuple(np.random.randint(0, [self.rows, self.cols])) # Should produce a cell (x, y) in the environment
         # NEED to check this logic (seems like barriers that aren't in conflict are not getting accepted)
+        # This while loop might be causing the program to stall?
         while new_barrier in B_prime or new_barrier in invalid_cells:
             new_barrier = tuple(np.random.randint(0, [self.num_rows, self.num_cols]))
-            print("new barrier location: ", new_barrier)
         B_prime.add(new_barrier)
+        print("new barrier location: ", new_barrier)
+
+        return B_prime"""
+    
+    def propose(self, B):
+        B_prime = B.copy()
+        paths = self.paths
+        populated = self.populated_areas
+        flatten_paths = np.vstack([np.array(p) for p in paths])
+
+        # Cells not valid for barriers
+        invalid_cells = np.vstack((populated, flatten_paths))
+        invalid_cells = np.unique(invalid_cells, axis=0)
+        invalid_cells = invalid_cells[(invalid_cells[:, 0] < self.num_rows) & (invalid_cells[:, 1] < self.num_cols)]
+
+        # Compute all valid cells
+        all_cells = {(r, c) for r in range(self.num_rows) for c in range(self.num_cols)}
+        valid_cells = all_cells - B_prime - set(map(tuple, invalid_cells))
+
+        if not valid_cells:
+            raise RuntimeError("No valid cells available for new barriers.")
+
+        # Remove a random barrier and add a new one
+        i = random.choice(list(B))
+        B_prime.remove(i)
+        new_barrier = random.choice(list(valid_cells))
+        # Turn components of the tuple into np.int64
+        new_barrier = (np.int64(new_barrier[0]), np.int64(new_barrier[1]))
+        B_prime.add(new_barrier)
+        #print(f"New barrier location: {new_barrier}")
+
         return B_prime
 
 

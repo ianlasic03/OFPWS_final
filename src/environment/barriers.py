@@ -43,6 +43,7 @@ class Barriers():
         best_b, best_F = init_barriers, F
         
         for _ in range(kmax):
+            print("Current iteration: ", _)
             # get this with the env.burned_area() function in pyro_custom.py
             # Sample a transition from initial state x to new state x' with sample_fire_propagation
             # I'm not sure this will return a new set of barriers the way it's written
@@ -72,6 +73,8 @@ class Barriers():
             # Update temperature (temperature *= cooling_rate)
             temperature *= cooling_rate 
         # Return the best barrier placement and fire spread
+        print("Best barrier placement: ", best_b)
+        print("Best fire spread: ", best_F)
         return best_b
     
     
@@ -107,9 +110,9 @@ class Barriers():
             # Check if the barrier is not in the populated areas
             if (not np.any(np.all(barrier == invalid_cells, axis=1))) and (barrier not in self.barriers):
                 # Set the fuel index to 0 for that cell
-                print("Fuel index before: ", state_space[1][barrier[1]][barrier[0]])
+                #print("Fuel index before: ", state_space[1][barrier[1]][barrier[0]])
                 state_space[1][barrier[0]][barrier[1]] = 0  # 1 = FUEL_INDEX
-                print("Fuel index after: ", state_space[1][barrier[1]][barrier[0]])
+                #print("Fuel index after: ", state_space[1][barrier[1]][barrier[0]])
 
                 # Add the barrier to the set of barriers
                 self.barriers.add(barrier) 

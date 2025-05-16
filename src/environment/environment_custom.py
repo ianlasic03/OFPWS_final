@@ -5,6 +5,8 @@ Environment for Wildfire Spread
 import numpy as np
 import random
 import torch
+import torch.nn.functional as F
+
 from typing import Optional, Any, Tuple, Dict, List
 import pyrorl
 
@@ -205,6 +207,9 @@ class FireWorld:
         self.finished_evacuating_cells = []
 
 
+    """    
+    Sample fire prop with no barrier mask
+    """    
     def sample_fire_propogation(self, barriers):
         """
         Sample the next state of the wildfire model.
@@ -235,17 +240,15 @@ class FireWorld:
         # randomly generated
         prob_mask = torch.rand_like(z)
         new_fire = (z > prob_mask).float()
+        
+        # then force barriers to stay unburned:
+        for r, c in barriers:
+            new_fire[r, c] = 0
 
         # These new fire locations are added to the state
         self.state_space[FIRE_INDEX] = np.maximum(
             np.array(new_fire), self.state_space[FIRE_INDEX]
         )
-        
-
-        for r,c in barriers:
-            self.state_space[FIRE_INDEX][c][r] = 0
-            self.state_space[FUEL_INDEX][c][r] = 0
-
 
     def update_paths_and_evactuations(self):
         """
