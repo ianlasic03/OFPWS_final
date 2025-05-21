@@ -1,0 +1,3 @@
+num_rows: 20
+num_cols: 20
+num_populated_areas: 5
