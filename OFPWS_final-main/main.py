@@ -86,7 +86,7 @@ if __name__ == "__main__":
     )
 
     # Run a simple loop of the environment
-    env.reset()
+    env.reset(seed=42)
 
     #print("Chosen barriers: ", SA_barriers)
     

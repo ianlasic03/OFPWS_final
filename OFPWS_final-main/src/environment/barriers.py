@@ -1,5 +1,7 @@
+SEED = 42
 import gymnasium
 import numpy as np
+np.random.seed(SEED)
 import pyrorl
 
 
