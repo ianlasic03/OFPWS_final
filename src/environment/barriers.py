@@ -51,7 +51,7 @@ class Barriers():
                 b_new.add(point)
         return b_new
 
-    def simulated_annealing(self, HJ, temperature, cooling_rate, kmax):
+    def simulated_annealing(self, HJ, fixed_sched, adaptive, temperature, cooling_rate, kmax):
         """
         Simulated annealing to find the best barrier placement.
         Takes in a 
@@ -78,10 +78,27 @@ class Barriers():
         F = wildfire_env.objective(init_barriers)
         best_b, best_F = init_barriers, F
         best_random_states = (np_rng_state, random_rng_state, torch_rng_state)
-        
+        best_F_history = []  # Initialize with first value
+        patience = 50 # tune this
+        T_threshold = 0.1 # Tune this
+        no_improvement = 0
+
+        print(f"Using Hooke-Jeeves? {HJ}")
+
         for k in range(kmax):
             print("Current iteration: ", k)
-            barriers_prime = wildfire_env.propose(best_b, HJ)
+            # Initialize barriers_prime with current best barriers
+            barriers_prime = best_b.copy()
+            
+            if HJ and fixed_sched:
+                if k % 10 == 0:
+                    barriers_prime = wildfire_env.propose(best_b, HJ)
+            elif HJ and adaptive:
+                if (no_improvement > patience) or (temperature < T_threshold):
+                    barriers_prime = wildfire_env.propose(best_b, HJ)
+            else:
+                # Run SA without hooke keeves
+                barriers_prime = wildfire_env.propose(best_b, HJ=False)
             
             F_prime = wildfire_env.objective(barriers_prime)
 
@@ -92,10 +109,16 @@ class Barriers():
                 F = F_prime
                 
             if F_prime < best_F:
+                # If better solution found, update no improvement 
+                no_improvement = 0
                 best_b, best_F = barriers_prime, F_prime
                 # Save random states when we find a better solution
                 best_random_states = (np.random.get_state(), random.getstate(), torch.get_rng_state())
-                
+            else: 
+                # If no better solution found, increment no improvement
+                no_improvement += 1
+            # Track the current best value for every iteration
+            best_F_history.append(best_F)
             temperature *= cooling_rate
             
         # Restore the random states that produced the best solution
@@ -105,7 +128,7 @@ class Barriers():
         
         print("Best barrier placement: ", best_b)
         print("Best fire spread: ", best_F)
-        return best_b
+        return best_b, best_F_history
     
     
     # Input state space into this function because we are calling barriers in environment custom now 

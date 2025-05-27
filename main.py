@@ -11,6 +11,8 @@ import torch
 from src.pyrorl_custom.pyro_custom import WildfireEvacuationEnv
 from src.environment.barriers import Barriers
 import argparse
+import matplotlib.pyplot as plt
+import time
 
 def train_dqn_policy(env, total_timesteps=10000):
     model = DQN("MlpPolicy", env, verbose=1)
@@ -25,11 +27,24 @@ def evaluate_dqn_policy(model, env, num_episodes=10):
 def random_barriers(barrier):
     return barrier.add_barrier()
     
+def plot_optimization_history(sa_history, fixed_hj_history, adaptive_hj_history, kmax):
+    plt.figure(figsize=(10, 6))
+    plt.plot(range(kmax), sa_history, 'b-', label='Simulated Annealing')
+    plt.plot(range(kmax), fixed_hj_history, 'r-', label='SA with Fixed Hooke-Jeeves')
+    plt.plot(range(kmax), adaptive_hj_history, 'g-', label='SA with Adaptive Hooke-Jeeves')
+    plt.xlabel('Iteration')
+    plt.ylabel('Objective Value (Burned Area)')
+    plt.title('Optimization History Comparison')
+    plt.grid(True)
+    plt.legend()
+    plt.savefig('optimization_history_comparison.png')
+    plt.close()
 
-def SA_training(env, barrier, seeds, action_sequence, HJ):
+def SA_training(env, barrier, seeds, action_sequence, HJ, fixed, adaptive):
     best_sa_result = float('inf')
     best_sa_barriers = None
     best_sa_env = None
+    best_obj_history = None
     print("\nRunning SA on multiple seeds:")
     for seed in seeds:
         print(f"\nRunning SA with seed {seed}")
@@ -39,8 +54,10 @@ def SA_training(env, barrier, seeds, action_sequence, HJ):
     
         # Run SA (Adjust hyper parameters)
         # Get one SA solution per seed
-        SA_barriers = barrier.simulated_annealing(
+        SA_barriers, current_obj_history = barrier.simulated_annealing(
             HJ,
+            fixed,
+            adaptive,
             temperature=1.0,
             cooling_rate=0.999,
             kmax=500,
@@ -54,7 +71,6 @@ def SA_training(env, barrier, seeds, action_sequence, HJ):
             env.apply_barriers()
             
             # Use fixed action sequence
-            
             for action in action_sequence:
                 observation, reward, terminated, truncated, info = env.step(action)
             
@@ -68,6 +84,7 @@ def SA_training(env, barrier, seeds, action_sequence, HJ):
         if avg_performance < best_sa_result:
             best_sa_result = avg_performance
             best_sa_barriers = SA_barriers
+            best_obj_history = current_obj_history
             # Create new environment with best barriers
             best_sa_env = WildfireEvacuationEnv(
                 num_rows=env.num_rows,
@@ -79,7 +96,7 @@ def SA_training(env, barrier, seeds, action_sequence, HJ):
             )
     
     print(f"\nBest SA solution found (average across trials): {best_sa_result:.2f}")
-    return best_sa_barriers, best_sa_env
+    return best_sa_barriers, best_sa_env, best_obj_history
 
 """def random_baseline_eval(barrier, base_env, seeds, action_sequence, num_random=10):
     performances = []
@@ -194,6 +211,10 @@ def main():
                       help='Simulated annealing Barriers')
     parser.add_argument('--HJ', action='store_true', default=False,
                       help='Use Hooke Jeeves')
+    parser.add_argument('--fixed', action='store_true', default=False,
+                      help='Use Fixed schedule for Hooke Jeeves')
+    parser.add_argument('--adaptive', action='store_true', default=False,
+                      help='Use adaptive schedule for Hooke Jeeves')
     parser.add_argument('--render', action='store_true', default=False,
                       help='Render the best solution')
    
@@ -205,30 +226,28 @@ def main():
     best_sa_barriers = None
     
     # Setup environment 
-    num_rows, num_cols = 20, 20
-    # Scale up populated areas (multiply coordinates by 2)
-    populated_areas = np.array([[2, 4], [8, 16], [12, 8], [16, 14]])
-    # Scale up paths (multiply all coordinates by 2)
+    num_rows, num_cols = 10, 10
+    populated_areas = np.array([[1, 2], [4, 8], [6, 4], [8, 7]])
     paths = np.array(
         [
-            [[2, 0], [2, 2]],
-            [[4, 4], [6, 4], [8, 4], [8, 2], [8, 0]],
-            [[4, 18], [4, 16], [6, 16]],
-            [[10, 16], [12, 16], [12, 18]],
-            [[14, 14], [12, 14], [12, 16], [12, 18]],
-            [[16, 12], [16, 10], [18, 10]],
-            [[16, 10], [18, 10], [14, 10], [14, 8]],
+            [[1, 0], [1, 1]],
+            [[2, 2], [3, 2], [4, 2], [4, 1], [4, 0]],
+            [[2, 9], [2, 8], [3, 8]],
+            [[5, 8], [6, 8], [6, 9]],
+            [[7, 7], [6, 7], [6, 8], [6, 9]],
+            [[8, 6], [8, 5], [9, 5]],
+            [[8, 5], [9, 5], [7, 5], [7, 4]],
         ],
         dtype=object,
     )
     paths_to_pops = {
-        0: [[2, 4]],
-        1: [[2, 4]],
-        2: [[8, 16]],
-        3: [[8, 16]],
-        4: [[16, 14]],
-        5: [[16, 14]],
-        6: [[12, 8]],
+        0: [[1, 2]],
+        1: [[1, 2]],
+        2: [[4, 8]],
+        3: [[4, 8]],
+        4: [[8, 7]],
+        5: [[8, 7]],
+        6: [[6, 4]],
     }
     
     # Create base environment
@@ -246,7 +265,7 @@ def main():
         base_env,
         paths=paths,
         populated_areas=populated_areas,
-        num_barriers=5,  # Keep same number of barriers
+        num_barriers=5,
     )
 
     # Fixed action sequence for deterministic evaluation
@@ -278,13 +297,55 @@ def main():
         del dqn_model
 
     if args.SA: 
-        # Run SA training to get best barriers
-        if args.HJ:
-            HJ = True
-        else: 
-            HJ = False
-        best_sa_barriers, best_sa_env = SA_training(base_env, barrier, seeds, action_sequence, HJ)
-        
+        # Run regular SA
+        start_time = time.time()
+        HJ = False
+        fixed = False
+        adaptive = False
+        best_sa_barriers, best_sa_env, sa_history = SA_training(base_env, barrier, seeds, action_sequence, HJ, fixed, adaptive)
+        sa_time = time.time() - start_time
+        print(f"\nSA runtime: {sa_time:.2f} seconds")
+
+        # Run SA with Fixed HJ
+        start_time = time.time()
+        HJ = True
+        fixed = True
+        adaptive = False
+        best_sa_fixed_hj_barriers, best_sa_fixed_hj_env, fixed_hj_history = SA_training(base_env, barrier, seeds, action_sequence, HJ, fixed, adaptive)
+        fixed_hj_time = time.time() - start_time
+        print(f"\nSA with Fixed Hooke-Jeeves runtime: {fixed_hj_time:.2f} seconds")
+
+        # Run SA with Adaptive HJ
+        start_time = time.time()
+        HJ = True
+        fixed = False
+        adaptive = True
+        best_sa_adaptive_hj_barriers, best_sa_adaptive_hj_env, adaptive_hj_history = SA_training(base_env, barrier, seeds, action_sequence, HJ, fixed, adaptive)
+        adaptive_hj_time = time.time() - start_time
+        print(f"\nSA with Adaptive Hooke-Jeeves runtime: {adaptive_hj_time:.2f} seconds")
+
+        # Plot all three histories together
+        plot_optimization_history(sa_history, fixed_hj_history, adaptive_hj_history, 500)
+
+        # Find the best solution among all three methods
+        final_values = {
+            'SA': sa_history[-1],
+            'Fixed HJ': fixed_hj_history[-1],
+            'Adaptive HJ': adaptive_hj_history[-1]
+        }
+        best_method = min(final_values.items(), key=lambda x: x[1])[0]
+        print(f"\nBest method: {best_method}")
+
+        # Use the best solution for DQN training
+        if best_method == 'SA':
+            best_sa_env = best_sa_env
+            best_sa_barriers = best_sa_barriers
+        elif best_method == 'Fixed HJ':
+            best_sa_env = best_sa_fixed_hj_env
+            best_sa_barriers = best_sa_fixed_hj_barriers
+        else:  # Adaptive HJ
+            best_sa_env = best_sa_adaptive_hj_env
+            best_sa_barriers = best_sa_adaptive_hj_barriers
 
         # Train DQN directly on the environment
         dqn_model = train_dqn_policy(best_sa_env, total_timesteps=20000)
