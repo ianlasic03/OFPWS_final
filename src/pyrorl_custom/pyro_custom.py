@@ -301,17 +301,26 @@ class WildfireEvacuationEnv(gym.Env):
                     burned_area += 1
         return burned_area
     
-    # Check this, it always returns 0, not working right 
-    def objective(self, barriers, trials=10):
+    def objective(self, barriers, k_cur, trials=10):
         results = []
         for _ in range(trials):
             self.reset()
             self.barriers = barriers
             #done = False
+            """if k_cur == 499:
+                for _ in range(10): # Go through 10 timesteps
+                    a = self.action_space.sample()
+                    _, _, done, _, _ = self.step(a)
+                    #self.render()
+            else:"""
             for _ in range(10): # Go through 10 timesteps
                 a = self.action_space.sample()
                 _, _, done, _, _ = self.step(a)
+
             results.append(self.burned_area())
+            if k_cur == 499:
+                print("results: ", results, "\n")
+                print(sum(results) / len(results))
         return sum(results) / len(results)
         
         

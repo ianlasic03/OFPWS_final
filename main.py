@@ -5,19 +5,19 @@ Example of how to use the wildfire evacuation RL environment.
 import gymnasium
 import numpy as np
 import pyrorl
+import random
+import torch
 from src.pyrorl_custom.pyro_custom import WildfireEvacuationEnv
 from src.environment.barriers import Barriers
 
 
 if __name__ == "__main__":
-
+    # Run SA over several seeds
+    seeds = [42, 123, 456, 789, 101]  # Different seeds to test
+    best_sa_result = float('inf')
+    best_sa_barriers = None
     
-    """
-    Run basic environment.
-    """
-
-    # Set up the environment
-    # Set up parameters
+    # Setup environment 
     num_rows, num_cols = 10, 10
     populated_areas = np.array([[1, 2], [4, 8], [6, 4], [8, 7]])
     paths = np.array(
@@ -58,53 +58,93 @@ if __name__ == "__main__":
         num_barriers=5,
     )
 
-    # Run simulated annealing to find the best barrier placement
-    #random_barriers = barrier.add_barrier()
-    SA_barriers = barrier.simulated_annealing(
-        temperature=1.0,
-        cooling_rate=0.999,
-        kmax=500,
-    )
+    # Fixed action sequence for deterministic evaluation, Do i need this?
+    action_sequence = [0, 1, 2, 3, 4, 5, 6, 7, 9, 10]  # 10 actions
     
-    #print("Barriers: ", random_barriers)
-    #print("state space of the fuel_index in add barrier:", state_space[1])
-    env = WildfireEvacuationEnv(
-        num_rows=num_rows,
-        num_cols=num_cols,
-        populated_areas=populated_areas,
-        paths=paths,
-        paths_to_pops=paths_to_pops,
-        barriers=SA_barriers
-        # Optional parameters you can add:
-        # custom_fire_locations=None,  # If you want to specify initial fire locations
-        # wind_speed=None,  # Wind speed affecting fire spread
-        # wind_angle=None,  # Wind direction angle
-        # fuel_mean=8.5,  # Default value for fuel mean
-        # fuel_stdev=3,  # Default value for fuel standard deviation
-        # fire_propagation_rate=0.094,  # Default value for fire spread rate
-        # skip=False  # Whether to skip rendering animation
-    )
+    print("\nRunning SA on multiple seeds:")
+    for seed in seeds:
+        print(f"\nRunning SA with seed {seed}")
+        # Set seeds for reproducibility
+        np.random.seed(seed)
+        random.seed(seed)
+    
+        # Run SA (Adjust hyper parameters)
+        # Get one SA solution per seed
+        SA_barriers = barrier.simulated_annealing(
+            temperature=1.0,
+            cooling_rate=0.999,
+            kmax=500,
+        )
 
-    # Run a simple loop of the environment
-    env.reset()
+        # Evaluate the solution
+        env = WildfireEvacuationEnv(
+            num_rows=num_rows,
+            num_cols=num_cols,
+            populated_areas=populated_areas,
+            paths=paths,
+            paths_to_pops=paths_to_pops,
+            barriers=SA_barriers
+        )
+        
+        # Run multiple trials to get average performance, for each seed
+        trial_results = []
+        for _ in range(10):
+            env.reset(seed=seed)
+            env.barriers = SA_barriers
+            env.apply_barriers()
+            
+            # Use fixed action sequence
+            for action in action_sequence:
+                observation, reward, terminated, truncated, info = env.step(action)
+            
+            trial_results.append(env.burned_area())
+        
+        avg_performance = sum(trial_results) / len(trial_results)
+        print(f"Seed {seed} average performance: {avg_performance:.2f}")
+        print(f"Individual trial results: {trial_results}")
 
-    #print("Chosen barriers: ", SA_barriers)
+        # Keep track of best solution
+        if avg_performance < best_sa_result:
+            best_sa_result = avg_performance
+            best_sa_barriers = SA_barriers
     
-    for _ in range(10):
-        #print("Barriers: ", random_barriers)
-        #print("state space of the fuel_index in the time step loop (should be zero for barrier locations):", env.fire_env.state_space[1])
-        # Take action and observation
-        action = env.action_space.sample()
-        observation, reward, terminated, truncated, info = env.step(action)
-        #print("observation: ", observation[1])
-        #print("observation shape: ", observation[1].shape)
-        #total_burned_area = env.burned_area()
-        #print("Current burned area: ", total_burned_area, "\n")
-        # Render environment and print reward
-        env.render()
-        #print("Reward: " + str(reward))
+    print(f"\nBest SA solution found (average across trials): {best_sa_result:.2f}")
     
-    total_burned_area = env.burned_area()
-    print("Final area burned: ", total_burned_area, "\n")
-    # Generate the gif
-    env.unwrapped.generate_gif()
+    # Now evaluate the best solution on multiple seeds
+    print("\nEvaluating best solution on multiple seeds:")
+    seed_results = []
+    
+    for seed in seeds:
+        print(f"\nRunning with seed {seed}")
+        # Set seeds for reproducibility
+        np.random.seed(seed)
+        random.seed(seed)
+        
+        # Run multiple trials for this seed
+        trial_results = []
+        for trial in range(10):
+            env.reset(seed=seed)
+            # Runninng this barrier solution 
+            env.barriers = best_sa_barriers
+            env.apply_barriers()
+            
+            # Use fixed action sequence
+            for action in action_sequence:
+                observation, reward, terminated, truncated, info = env.step(action)
+            
+            trial_results.append(env.burned_area())
+        
+        # Calculate average for this seed
+        seed_avg = sum(trial_results) / len(trial_results)
+        seed_results.append(seed_avg)
+        print(f"Seed {seed} average burned area: {seed_avg:.2f}")
+        print(f"Individual trial results: {trial_results}")
+    
+    # Print overall results
+    print("\nOverall Results:")
+    print(f"Average across all seeds: {sum(seed_results) / len(seed_results):.2f}")
+    print(f"Standard deviation: {np.std(seed_results):.2f}")
+    print(f"Min: {min(seed_results):.2f}, Max: {max(seed_results):.2f}")
+    
+    # Generate the gif from the last trial
+    #env.unwrapped.generate_gif()

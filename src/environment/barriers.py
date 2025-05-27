@@ -1,6 +1,9 @@
 import gymnasium
 import numpy as np
 import pyrorl
+import random
+import torch
+SEED = 42
 
 
 class Barriers():
@@ -31,48 +34,41 @@ class Barriers():
         OR
         do we keep track of the best placement of barriers
         """
-        #wildfire_env = self.env
-
-        # Initial random barrier placement
-        init_barriers = self.add_barrier()  # Add barriers to the environment
-        # Get fire spread for random barriers (F)
-        wildfire_env = self.env
-        # This runs through an entire simulation of the environment with initial barriers
-        F = wildfire_env.objective(init_barriers)
-        #F = fire_env.burned_area()  # Get the initial fire spread
-        best_b, best_F = init_barriers, F
+        # Save initial random states
+        np_rng_state = np.random.get_state()
+        random_rng_state = random.getstate()
+        torch_rng_state = torch.get_rng_state()
         
-        for _ in range(kmax):
-            print("Current iteration: ", _)
-            # get this with the env.burned_area() function in pyro_custom.py
-            # Sample a transition from initial state x to new state x' with sample_fire_propagation
-            # I'm not sure this will return a new set of barriers the way it's written
-            # I think It will return a new state space with the same init_barriers in it
-            # Sample a new set of barriers 
-            #barriers_prime = self.sample_fire_propagation(init_barriers) # !!!!
-            
-            # Propose a new set of barriers
+        # Initial random barrier placement
+        init_barriers = self.add_barrier()
+        wildfire_env = self.env
+        F = wildfire_env.objective(init_barriers, 0)
+        best_b, best_F = init_barriers, F
+        best_random_states = (np_rng_state, random_rng_state, torch_rng_state)
+        
+        for k in range(kmax):
+            print("Current iteration: ", k)
             barriers_prime = wildfire_env.propose(best_b)
-            # I'm not sure fire_env is actually changed when running propose?
-            # Get objective value for new set of barriers
-            F_prime = wildfire_env.objective(barriers_prime) # This will reset environment with new barriers and run simulation
+            F_prime = wildfire_env.objective(barriers_prime, k)
 
-            # Calculate the fire spread F' for the new state x'
-            # if F' < F, update x = x' and F = F' 
-            # F' less than F -> F' is better
             score_diff = F_prime - best_F
 
-            # If score_diff is less than 0, new state is better so accept it
-            # if score_ diff is greater than 0, new state is worse so accept it with some probability
             if score_diff <= 0 or np.random.rand() < np.exp(-score_diff / temperature):
                 self.barriers = barriers_prime
                 F = F_prime
-            # If spread of new state is less than best spread, update the best barrier and spread   
+                
             if F_prime < best_F:
                 best_b, best_F = barriers_prime, F_prime
-            # Update temperature (temperature *= cooling_rate)
-            temperature *= cooling_rate 
-        # Return the best barrier placement and fire spread
+                # Save random states when we find a better solution
+                best_random_states = (np.random.get_state(), random.getstate(), torch.get_rng_state())
+                
+            temperature *= cooling_rate
+            
+        # Restore the random states that produced the best solution
+        np.random.set_state(best_random_states[0])
+        random.setstate(best_random_states[1])
+        torch.set_rng_state(best_random_states[2])
+        
         print("Best barrier placement: ", best_b)
         print("Best fire spread: ", best_F)
         return best_b
