@@ -301,30 +301,81 @@ class WildfireEvacuationEnv(gym.Env):
                     burned_area += 1
         return burned_area
     
-    def objective(self, barriers, k_cur, trials=10):
+    def objective(self, barriers, trials=10):
         results = []
         for _ in range(trials):
             self.reset()
             self.barriers = barriers
-            #done = False
-            """if k_cur == 499:
-                for _ in range(10): # Go through 10 timesteps
-                    a = self.action_space.sample()
-                    _, _, done, _, _ = self.step(a)
-                    #self.render()
-            else:"""
             for _ in range(10): # Go through 10 timesteps
                 a = self.action_space.sample()
                 _, _, done, _, _ = self.step(a)
-
             results.append(self.burned_area())
-            if k_cur == 499:
-                print("results: ", results, "\n")
-                print(sum(results) / len(results))
-        return sum(results) / len(results)
         
+        avg_result = sum(results) / len(results)
+        return avg_result
+    
+    def exploration(self, point):
+        new_point = list(point)
+        F_prev = self.objective({tuple(new_point)})
+        for i in range(2):
+            for direction in [-1, 1]:
+                test_coord = new_point[i] + direction
+
+                # Boundary checks
+                if test_coord < 0:
+                    continue
+                if i == 0 and test_coord >= self.num_rows:
+                    continue
+                if i == 1 and test_coord >= self.num_cols:
+                    continue
+
+                test_point = new_point.copy()
+                test_point[i] = test_coord
+                F_prime = self.objective({tuple(test_point)})
+                if F_prime < F_prev:
+                    new_point = test_point
+                    F_prev = F_prime
+        return tuple(new_point)
+
+    def hooke_jeeves(self, B_prime, valid_cells):
+        # Use Hooke-Jeeves to find the least effective barrier to remove
+        worst_barrier = None
+        worst_objective = float('-inf')
         
-    def propose(self, B):
+        # Test removing each barrier
+        for barrier in B_prime:
+            test_set = B_prime.copy()
+            test_set.remove(barrier)
+            obj = self.objective(test_set)
+            if obj > worst_objective:
+                worst_objective = obj
+                worst_barrier = barrier
+        
+        # Remove the worst barrier
+        B_prime.remove(worst_barrier)
+            
+        # Try to find a better point for each remaining barrier
+        best_new_point = None
+        best_objective = worst_objective
+        
+        for point in B_prime:
+            new_point = self.exploration(point)
+            if new_point in valid_cells:
+                new_obj = self.objective({new_point})
+                if new_obj < best_objective:
+                    best_new_point = new_point
+                    best_objective = new_obj
+            else:
+                print(f"Warning: New point {new_point} is not in valid cells. Keeping original point {point}")
+        
+        # If no better point was found, return the original removed point
+        if best_new_point is None:
+            print(f"No better point found, keeping original point {worst_barrier}")
+            return worst_barrier
+            
+        return best_new_point
+        
+    def propose(self, B, HJ):
         B_prime = B.copy()
         paths = self.paths
         populated = self.populated_areas
@@ -342,14 +393,18 @@ class WildfireEvacuationEnv(gym.Env):
         if not valid_cells:
             raise RuntimeError("No valid cells available for new barriers.")
 
-        # Remove a random barrier and add a new one
-        i = random.choice(list(B))
-        B_prime.remove(i)
-        new_barrier = random.choice(list(valid_cells))
-        # Turn components of the tuple into np.int64
-        new_barrier = (np.int64(new_barrier[0]), np.int64(new_barrier[1]))
-        B_prime.add(new_barrier)
-        #print(f"New barrier location: {new_barrier}")
+        if HJ:
+            best_new_barrier = self.hooke_jeeves(B_prime, valid_cells)
+            best_new_barrier = (np.int64(best_new_barrier[0]), np.int64(best_new_barrier[1]))
+            B_prime.add(best_new_barrier)
+        else:
+            # Random selection for both removal and placement
+            i = random.choice(list(B))
+            B_prime.remove(i)
+            new_barrier = random.choice(list(valid_cells))
+            # Turn components of the tuple into np.int64
+            new_barrier = (np.int64(new_barrier[0]), np.int64(new_barrier[1]))
+            B_prime.add(new_barrier)
 
         return B_prime
 

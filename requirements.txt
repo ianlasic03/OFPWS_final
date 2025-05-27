@@ -21,4 +21,5 @@ zipp==3.21.0
 numpy
 matplotlib
 scipy
+stable_baselines3
 # The following packages are required for the code to run

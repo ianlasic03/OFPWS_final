@@ -1,7 +1,8 @@
 """
 Example of how to use the wildfire evacuation RL environment.
 """
-
+from stable_baselines3 import DQN
+from stable_baselines3.common.evaluation import evaluate_policy
 import gymnasium
 import numpy as np
 import pyrorl
@@ -11,11 +12,21 @@ from src.pyrorl_custom.pyro_custom import WildfireEvacuationEnv
 from src.environment.barriers import Barriers
 import argparse
 
+def train_dqn_policy(env, total_timesteps=10000):
+    model = DQN("MlpPolicy", env, verbose=1)
+    model.learn(total_timesteps=total_timesteps)
+    return model
+
+def evaluate_dqn_policy(model, env, num_episodes=10):
+    mean_reward, std_reward = evaluate_policy(model, env, n_eval_episodes=num_episodes)
+    print(f"Mean reward over {num_episodes} episodes: {mean_reward:.2f} ± {std_reward:.2f}")
+    return mean_reward, std_reward
+
 def random_barriers(barrier):
     return barrier.add_barrier()
     
 
-def SA_training(env, barrier, seeds, action_sequence):
+def SA_training(env, barrier, seeds, action_sequence, HJ):
     best_sa_result = float('inf')
     best_sa_barriers = None
     best_sa_env = None
@@ -29,6 +40,7 @@ def SA_training(env, barrier, seeds, action_sequence):
         # Run SA (Adjust hyper parameters)
         # Get one SA solution per seed
         SA_barriers = barrier.simulated_annealing(
+            HJ,
             temperature=1.0,
             cooling_rate=0.999,
             kmax=500,
@@ -43,10 +55,7 @@ def SA_training(env, barrier, seeds, action_sequence):
             
             # Use fixed action sequence
             
-            #for action in action_sequence:
-            for _i in range(10):
-                action = env.action_space.sample()
-
+            for action in action_sequence:
                 observation, reward, terminated, truncated, info = env.step(action)
             
             trial_results.append(env.burned_area())
@@ -72,7 +81,7 @@ def SA_training(env, barrier, seeds, action_sequence):
     print(f"\nBest SA solution found (average across trials): {best_sa_result:.2f}")
     return best_sa_barriers, best_sa_env
 
-def random_baseline_eval(barrier, base_env, seeds, action_sequence, num_random=10):
+"""def random_baseline_eval(barrier, base_env, seeds, action_sequence, num_random=10):
     performances = []
     best_performance = float('inf')
     best_env = None
@@ -81,6 +90,7 @@ def random_baseline_eval(barrier, base_env, seeds, action_sequence, num_random=1
     for i in range(num_random):
         print(f"\nEvaluating random barrier config {i+1}/{num_random}")
         rand_barriers = random_barriers(barrier)
+        print(rand_barriers)
         rand_env = WildfireEvacuationEnv(
             num_rows=base_env.num_rows,
             num_cols=base_env.num_cols,
@@ -100,10 +110,10 @@ def random_baseline_eval(barrier, base_env, seeds, action_sequence, num_random=1
             best_env = rand_env
             best_barriers = rand_barriers
     
-    return seed_results, performances, best_env, best_barriers
+    return  seed_results, performances, best_barriers, best_env"""
     
 
-def evaluation(env, seeds, barriers, action_sequence):
+def evaluation(env, model, seeds, barriers, num_trials=10):
  # Now evaluate the best solution on multiple seeds
     print("\nEvaluating best solution on multiple seeds:")
     seed_results = []
@@ -116,29 +126,26 @@ def evaluation(env, seeds, barriers, action_sequence):
         
         # Run multiple trials for this seed
         trial_results = []
-        for trial in range(10):
-            env.reset(seed=seed)
-            # Runninng this barrier solution 
+        for trial in range(num_trials):
+            obs, _ = env.reset(seed=seed)
+            # Running this barrier solution 
             env.barriers = barriers
             env.apply_barriers()
-            
-            # Use fixed action sequence
             for _ in range(10):
-                action = env.action_space.sample()
-
-            #for action in action_sequence:
-                observation, reward, terminated, truncated, info = env.step(action)
+                action, _ = model.predict(obs, deterministic=True)
+                action = int(action)  # Convert numpy array to integer
+                obs, reward, terminated, truncated, info = env.step(action)
             
             trial_results.append(env.burned_area())
         
         # Calculate average for this seed
-        seed_avg = sum(trial_results) / len(trial_results)
+        seed_avg = np.mean(trial_results)
         seed_results.append(seed_avg)
         print(f"Seed {seed} average burned area: {seed_avg:.2f}")
         print(f"Individual trial results: {trial_results}")
     return seed_results
 
-def render_best_solution(env, seeds, action_sequence):
+def render_best_solution(env, seeds, model):
     """Render the best solution for visualization using the best seed"""
     print("\nRendering best solution...")
     
@@ -148,15 +155,13 @@ def render_best_solution(env, seeds, action_sequence):
     
     print("Finding best seed...")
     for seed in seeds:
-        env.reset(seed=seed)
+        obs, _ = env.reset(seed=seed)
         env.apply_barriers()
         
-        # Use fixed action sequence
         for _ in range(10):
-            action = env.action_space.sample()
-
-        #for action in action_sequence:
-            observation, reward, terminated, truncated, info = env.step(action)
+            action, _ = model.predict(obs, deterministic=True)
+            action = int(action)  # Convert numpy array to integer
+            obs, reward, terminated, truncated, info = env.step(action)
         
         performance = env.burned_area()
         print(f"Seed {seed} performance: {performance:.2f}")
@@ -168,16 +173,14 @@ def render_best_solution(env, seeds, action_sequence):
     print(f"\nRendering best solution with best seed {best_seed} (burned area: {best_performance:.2f})")
     
     # Render the best seed
-    env.reset(seed=best_seed)
+    obs, _ = env.reset(seed=best_seed)
     env.apply_barriers()
     
-    # Use fixed action sequence
-    #for action in action_sequence:
     for _ in range(10):
-        action = env.action_space.sample()
-
-        observation, reward, terminated, truncated, info = env.step(action)
-    env.render()  # This will create screenshots
+        action, _ = model.predict(obs, deterministic=True)
+        action = int(action)  # Convert numpy array to integer
+        obs, reward, terminated, truncated, info = env.step(action)
+        env.render()  # This will create screenshots
     
     # Generate gif from the screenshots
     env.generate_gif()
@@ -189,6 +192,8 @@ def main():
                       help='Random Barriers')
     parser.add_argument('--SA', action='store_true', default=False,
                       help='Simulated annealing Barriers')
+    parser.add_argument('--HJ', action='store_true', default=False,
+                      help='Use Hooke Jeeves')
     parser.add_argument('--render', action='store_true', default=False,
                       help='Render the best solution')
    
@@ -200,28 +205,30 @@ def main():
     best_sa_barriers = None
     
     # Setup environment 
-    num_rows, num_cols = 10, 10
-    populated_areas = np.array([[1, 2], [4, 8], [6, 4], [8, 7]])
+    num_rows, num_cols = 20, 20
+    # Scale up populated areas (multiply coordinates by 2)
+    populated_areas = np.array([[2, 4], [8, 16], [12, 8], [16, 14]])
+    # Scale up paths (multiply all coordinates by 2)
     paths = np.array(
         [
-            [[1, 0], [1, 1]],
-            [[2, 2], [3, 2], [4, 2], [4, 1], [4, 0]],
-            [[2, 9], [2, 8], [3, 8]],
-            [[5, 8], [6, 8], [6, 9]],
-            [[7, 7], [6, 7], [6, 8], [6, 9]],
-            [[8, 6], [8, 5], [9, 5]],
-            [[8, 5], [9, 5], [7, 5], [7, 4]],
+            [[2, 0], [2, 2]],
+            [[4, 4], [6, 4], [8, 4], [8, 2], [8, 0]],
+            [[4, 18], [4, 16], [6, 16]],
+            [[10, 16], [12, 16], [12, 18]],
+            [[14, 14], [12, 14], [12, 16], [12, 18]],
+            [[16, 12], [16, 10], [18, 10]],
+            [[16, 10], [18, 10], [14, 10], [14, 8]],
         ],
         dtype=object,
     )
     paths_to_pops = {
-        0: [[1, 2]],
-        1: [[1, 2]],
-        2: [[4, 8]],
-        3: [[4, 8]],
-        4: [[8, 7]],
-        5: [[8, 7]],
-        6: [[6, 4]],
+        0: [[2, 4]],
+        1: [[2, 4]],
+        2: [[8, 16]],
+        3: [[8, 16]],
+        4: [[16, 14]],
+        5: [[16, 14]],
+        6: [[12, 8]],
     }
     
     # Create base environment
@@ -239,29 +246,52 @@ def main():
         base_env,
         paths=paths,
         populated_areas=populated_areas,
-        num_barriers=5,
+        num_barriers=5,  # Keep same number of barriers
     )
 
     # Fixed action sequence for deterministic evaluation
     action_sequence = [0, 1, 2, 3, 4, 5, 6, 7, 9, 10]  # 10 actions
     
     if args.random:
-        seed_results, performances, best_env, best_barriers = random_baseline_eval(barrier, base_env, seeds, action_sequence)
-        print("\nSummary of Random Barrier Performance:")
-        print(f"Average across {10} configs: {np.mean(performances):.2f}")
-        print(f"Best random config: {min(performances):.2f}")
-        print(f"Worst random config: {max(performances):.2f}")
-        print(f"Std deviation: {np.std(performances):.2f}")
+        random_barrier_set = random_barriers(barrier)
+        rand_env = WildfireEvacuationEnv(
+            num_rows=num_rows,
+            num_cols=num_cols,
+            populated_areas=populated_areas,
+            paths=paths,
+            paths_to_pops=paths_to_pops,
+            barriers=random_barrier_set,
+        )
+        # Train DQN directly on the environment
+        dqn_model = train_dqn_policy(rand_env, total_timesteps=20000)
+        evaluate_dqn_policy(dqn_model, rand_env)
+        seed_results = evaluation(rand_env, dqn_model, seeds, random_barrier_set)
         
+        # Print overall results
+        print("\nRandom Results:")
+        print(f"Average across all seeds: {sum(seed_results) / len(seed_results):.2f}")
+        print(f"Standard deviation: {np.std(seed_results):.2f}")
+        print(f"Min: {min(seed_results):.2f}, Max: {max(seed_results):.2f}")
+
         if args.render:
-            render_best_solution(best_env, seeds, action_sequence)
-    
+            render_best_solution(rand_env, seeds, dqn_model)
+        del dqn_model
+
     if args.SA: 
         # Run SA training to get best barriers
-        best_sa_barriers, best_sa_env = SA_training(base_env, barrier, seeds, action_sequence)
+        if args.HJ:
+            HJ = True
+        else: 
+            HJ = False
+        best_sa_barriers, best_sa_env = SA_training(base_env, barrier, seeds, action_sequence, HJ)
         
+
+        # Train DQN directly on the environment
+        dqn_model = train_dqn_policy(best_sa_env, total_timesteps=20000)
+        evaluate_dqn_policy(dqn_model, best_sa_env)
+
         # Evaluate best SA barriers
-        seed_results = evaluation(best_sa_env, seeds, best_sa_barriers, action_sequence)
+        seed_results = evaluation(best_sa_env, dqn_model, seeds, best_sa_barriers)
         
         # Print overall results
         print("\nSA Results:")
@@ -270,7 +300,8 @@ def main():
         print(f"Min: {min(seed_results):.2f}, Max: {max(seed_results):.2f}")
         
         if args.render:
-            render_best_solution(best_sa_env, seeds, action_sequence)
+            render_best_solution(best_sa_env, seeds, dqn_model)
+        del dqn_model
 
 
 if __name__ == "__main__":

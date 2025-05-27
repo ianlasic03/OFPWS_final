@@ -18,7 +18,40 @@ class Barriers():
         self.num_barriers = num_barriers
         self.barriers = set()
 
-    def simulated_annealing(self, temperature, cooling_rate, kmax):
+    def exploration(self, point):
+        new_point = list(point)
+        F_prev = self.env.objective({tuple(new_point)})
+        for i in range(2):
+            for direction in [-1, 1]:
+                test_coord = new_point[i] + direction
+
+                # Boundary checks
+                if test_coord < 0:
+                    continue
+                if i == 0 and test_coord >= self.env.num_rows:
+                    continue
+                if i == 1 and test_coord >= self.env.num_cols:
+                    continue
+
+                test_point = new_point.copy()
+                test_point[i] = test_coord
+                F_prime = self.env.objective({tuple(test_point)})
+                if F_prime < F_prev:
+                    new_point = test_point
+                    F_prev = F_prime
+        return tuple(new_point)
+
+    def hooke_jeeves(self, best_b):
+        b_new = set()
+        for point in best_b:
+            new_point = self.exploration(point)
+            if self.env.objective({new_point}) < self.env.objective({point}):
+                b_new.add(new_point)
+            else:
+                b_new.add(point)
+        return b_new
+
+    def simulated_annealing(self, HJ, temperature, cooling_rate, kmax):
         """
         Simulated annealing to find the best barrier placement.
         Takes in a 
@@ -42,14 +75,15 @@ class Barriers():
         # Initial random barrier placement
         init_barriers = self.add_barrier()
         wildfire_env = self.env
-        F = wildfire_env.objective(init_barriers, 0)
+        F = wildfire_env.objective(init_barriers)
         best_b, best_F = init_barriers, F
         best_random_states = (np_rng_state, random_rng_state, torch_rng_state)
         
         for k in range(kmax):
             print("Current iteration: ", k)
-            barriers_prime = wildfire_env.propose(best_b)
-            F_prime = wildfire_env.objective(barriers_prime, k)
+            barriers_prime = wildfire_env.propose(best_b, HJ)
+            
+            F_prime = wildfire_env.objective(barriers_prime)
 
             score_diff = F_prime - best_F
 
