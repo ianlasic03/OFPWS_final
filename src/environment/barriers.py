@@ -3,8 +3,6 @@ import numpy as np
 import pyrorl
 import random
 import torch
-SEED = 42
-
 
 class Barriers():
     def __init__(self, env, paths, populated_areas, num_barriers):
@@ -78,12 +76,10 @@ class Barriers():
         F = wildfire_env.objective(init_barriers)
         best_b, best_F = init_barriers, F
         best_random_states = (np_rng_state, random_rng_state, torch_rng_state)
-        best_F_history = []  # Initialize with first value
+        best_F_history = []  
         patience = 50 # tune this
-        T_threshold = 0.1 # Tune this
+        T_threshold = 0.07 # Tune this
         no_improvement = 0
-
-        print(f"Using Hooke-Jeeves? {HJ}")
 
         for k in range(kmax):
             print("Current iteration: ", k)
@@ -95,32 +91,40 @@ class Barriers():
                     barriers_prime = wildfire_env.propose(best_b, HJ)
             elif HJ and adaptive:
                 if (no_improvement > patience) or (temperature < T_threshold):
+                    no_improvement = 0  # Reset for new HJ attempt
                     barriers_prime = wildfire_env.propose(best_b, HJ)
             else:
                 # Run SA without hooke keeves
                 barriers_prime = wildfire_env.propose(best_b, HJ=False)
             
             F_prime = wildfire_env.objective(barriers_prime)
-
             score_diff = F_prime - best_F
-
-            if score_diff <= 0 or np.random.rand() < np.exp(-score_diff / temperature):
+            # Check if we accept the solution in SA
+            accept_solution = score_diff <= 0 or np.random.rand() < np.exp(-score_diff / temperature)
+            
+            if accept_solution:
                 self.barriers = barriers_prime
                 F = F_prime
-                
+                # If we accepted a better solution, reset no_improvement
+                if score_diff < 0:
+                    no_improvement = 0
+                else:
+                    no_improvement += 1
+            else:
+                # If we rejected the solution, increment no_improvement
+                no_improvement += 1
+            print("value of no improvement: ", no_improvement, "\n")
             if F_prime < best_F:
-                # If better solution found, update no improvement 
-                no_improvement = 0
+                # If better solution found, update best solution
                 best_b, best_F = barriers_prime, F_prime
                 # Save random states when we find a better solution
                 best_random_states = (np.random.get_state(), random.getstate(), torch.get_rng_state())
-            else: 
-                # If no better solution found, increment no improvement
-                no_improvement += 1
+            
             # Track the current best value for every iteration
             best_F_history.append(best_F)
             temperature *= cooling_rate
-            
+            if k > 450:
+                print("temperature: ", temperature, "\n")
         # Restore the random states that produced the best solution
         np.random.set_state(best_random_states[0])
         random.setstate(best_random_states[1])
@@ -158,14 +162,11 @@ class Barriers():
         # Randomly choose barrier states
         while len(self.barriers) < self.num_barriers:
             # Randomly choose a barrier state
-            # REPLACE THIS WITH SIMULATEAD ANNEALING 
             barrier = tuple(np.random.randint(0, [cols, rows])) # Should produce a cell (x, y) in the environment
             # Check if the barrier is not in the populated areas
             if (not np.any(np.all(barrier == invalid_cells, axis=1))) and (barrier not in self.barriers):
                 # Set the fuel index to 0 for that cell
-                #print("Fuel index before: ", state_space[1][barrier[1]][barrier[0]])
                 state_space[1][barrier[0]][barrier[1]] = 0  # 1 = FUEL_INDEX
-                #print("Fuel index after: ", state_space[1][barrier[1]][barrier[0]])
 
                 # Add the barrier to the set of barriers
                 self.barriers.add(barrier) 

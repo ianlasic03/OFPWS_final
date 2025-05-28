@@ -2,7 +2,6 @@
 OpenAI Gym Environment Wrapper Class
 """
 from src.environment.environment_custom import FireWorld
-#from pyrorl.envs.environment.environment import FireWorld
 from src.environment.barriers import Barriers
 import gymnasium as gym
 from gymnasium import spaces
@@ -61,7 +60,6 @@ class WildfireEvacuationEnv(gym.Env):
         self.fire_propagation_rate = fire_propagation_rate
         self.skip = skip
         self.objective_cache = {}  # Cache for objective values
-        # self.evaluation_history = []  # Track all evaluations for plotting
 
         self.fire_env = FireWorld(
             num_rows,
@@ -119,13 +117,6 @@ class WildfireEvacuationEnv(gym.Env):
             fuel_stdev=self.fuel_stdev,
             fire_propagation_rate=self.fire_propagation_rate,
         )
-        """barrier_manager = Barriers(
-            env=self.fire_env, paths=self.paths,
-            populated_areas=self.populated_areas,
-            num_barriers=5          
-        )
-        # Run with random placement of barriers
-        self.barriers = barrier_manager.add_barrier()"""
         self.apply_barriers()
 
         state_space = self.fire_env.get_state()
@@ -306,14 +297,6 @@ class WildfireEvacuationEnv(gym.Env):
     
     def objective(self, barriers, trials=10):
         # Convert barriers set to frozenset for hashing
-        """barriers_key = frozenset(barriers)
-        
-        # Check if result is in cache
-        if barriers_key in self.objective_cache:
-            result = self.objective_cache[barriers_key]
-            #self.evaluation_history.append(result)  # Track even cached evaluations
-            return result"""
-            
         results = []
         for _ in range(trials):
             self.reset()
@@ -325,9 +308,6 @@ class WildfireEvacuationEnv(gym.Env):
         
         avg_result = sum(results) / len(results)
         
-        # Store result in cache and track evaluation
-        #self.objective_cache[barriers_key] = avg_result
-        #self.evaluation_history.append(avg_result)
         return avg_result
     
     def exploration(self, point):
@@ -354,9 +334,6 @@ class WildfireEvacuationEnv(gym.Env):
         return tuple(new_point)
 
     def hooke_jeeves(self, B_prime, valid_cells):
-        #
-        # print(f"Trying HJ for B_prime: {B_prime}")
-
         # Use Hooke-Jeeves to find the least effective barrier to remove
         worst_barrier = None
         worst_objective = float('-inf')
@@ -389,7 +366,6 @@ class WildfireEvacuationEnv(gym.Env):
         if best_new_point is None:
             print(f"No better point found, keeping original point {worst_barrier}")
             B_prime.add(worst_barrier)
-            #return worst_barrier
         else:
             B_prime.add(best_new_point)
             
@@ -412,12 +388,8 @@ class WildfireEvacuationEnv(gym.Env):
 
         if not valid_cells:
             raise RuntimeError("No valid cells available for new barriers.")
-        #("Using HJ proposal" if HJ else "Using random proposal")
 
         if HJ:
-            """best_new_barrier = self.hooke_jeeves(B_prime, valid_cells)
-            best_new_barrier = (np.int64(best_new_barrier[0]), np.int64(best_new_barrier[1]))
-            B_prime.add(best_new_barrier)"""
             return self.hooke_jeeves(B_prime, valid_cells)
         else:
             # Random selection for both removal and placement

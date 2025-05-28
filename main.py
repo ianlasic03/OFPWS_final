@@ -40,11 +40,31 @@ def plot_optimization_history(sa_history, fixed_hj_history, adaptive_hj_history,
     plt.savefig('optimization_history_comparison.png')
     plt.close()
 
+def plot_runtime_analysis(sa_time, fixed_hj_time, adaptive_hj_time):
+    # Bar plot for total runtime
+    plt.figure(figsize=(10, 6))
+    methods = ['SA', 'SA + Fixed HJ', 'SA + Adaptive HJ']
+    times = [sa_time, fixed_hj_time, adaptive_hj_time]
+    
+    plt.bar(methods, times)
+    plt.title('Total Runtime Comparison')
+    plt.ylabel('Runtime (seconds)')
+    plt.grid(True, axis='y')
+    
+    # Add value labels on top of bars
+    for i, v in enumerate(times):
+        plt.text(i, v, f'{v:.2f}s', ha='center', va='bottom')
+    
+    plt.savefig('runtime_comparison.png')
+    plt.close()
+
 def SA_training(env, barrier, seeds, action_sequence, HJ, fixed, adaptive):
     best_sa_result = float('inf')
     best_sa_barriers = None
     best_sa_env = None
     best_obj_history = None
+    iteration_times = []  # Track time per iteration
+    
     print("\nRunning SA on multiple seeds:")
     for seed in seeds:
         print(f"\nRunning SA with seed {seed}")
@@ -54,14 +74,17 @@ def SA_training(env, barrier, seeds, action_sequence, HJ, fixed, adaptive):
     
         # Run SA (Adjust hyper parameters)
         # Get one SA solution per seed
+        iter_start_time = time.time()
         SA_barriers, current_obj_history = barrier.simulated_annealing(
             HJ,
             fixed,
             adaptive,
-            temperature=1.0,
-            cooling_rate=0.999,
+            temperature=0.5,
+            cooling_rate=0.995,
             kmax=500,
         )
+        iter_time = time.time() - iter_start_time
+        iteration_times.append(iter_time)
 
         # Run multiple trials to get average performance, for each seed
         trial_results = []
@@ -79,6 +102,7 @@ def SA_training(env, barrier, seeds, action_sequence, HJ, fixed, adaptive):
         avg_performance = sum(trial_results) / len(trial_results)
         print(f"Seed {seed} average performance: {avg_performance:.2f}")
         print(f"Individual trial results: {trial_results}")
+        print(f"Runtime for this seed: {iter_time:.2f} seconds")
 
         # Keep track of best solution
         if avg_performance < best_sa_result:
@@ -96,38 +120,8 @@ def SA_training(env, barrier, seeds, action_sequence, HJ, fixed, adaptive):
             )
     
     print(f"\nBest SA solution found (average across trials): {best_sa_result:.2f}")
+    print(f"Average runtime per seed: {sum(iteration_times)/len(iteration_times):.2f} seconds")
     return best_sa_barriers, best_sa_env, best_obj_history
-
-"""def random_baseline_eval(barrier, base_env, seeds, action_sequence, num_random=10):
-    performances = []
-    best_performance = float('inf')
-    best_env = None
-    best_barriers = None
-    
-    for i in range(num_random):
-        print(f"\nEvaluating random barrier config {i+1}/{num_random}")
-        rand_barriers = random_barriers(barrier)
-        print(rand_barriers)
-        rand_env = WildfireEvacuationEnv(
-            num_rows=base_env.num_rows,
-            num_cols=base_env.num_cols,
-            populated_areas=base_env.populated_areas,
-            paths=base_env.paths,
-            paths_to_pops=base_env.paths_to_pops,
-            barriers=rand_barriers
-        )
-        seed_results = evaluation(rand_env, seeds, rand_barriers, action_sequence)
-        mean = np.mean(seed_results)
-        performances.append(mean)
-        print(f"Random Config {i+1} mean burned area: {mean:.2f}")
-        
-        # Track best solution
-        if mean < best_performance:
-            best_performance = mean
-            best_env = rand_env
-            best_barriers = rand_barriers
-    
-    return  seed_results, performances, best_barriers, best_env"""
     
 
 def evaluation(env, model, seeds, barriers, num_trials=10):
@@ -162,7 +156,7 @@ def evaluation(env, model, seeds, barriers, num_trials=10):
         print(f"Individual trial results: {trial_results}")
     return seed_results
 
-def render_best_solution(env, seeds, model):
+def render_best_solution(env, evaluation_seeds, model):
     """Render the best solution for visualization using the best seed"""
     print("\nRendering best solution...")
     
@@ -171,7 +165,7 @@ def render_best_solution(env, seeds, model):
     best_performance = float('inf')
     
     print("Finding best seed...")
-    for seed in seeds:
+    for seed in evaluation_seeds:
         obs, _ = env.reset(seed=seed)
         env.apply_barriers()
         
@@ -221,7 +215,8 @@ def main():
     args = parser.parse_args()
 
     # Run SA over several seeds
-    seeds = [42, 123, 456, 789, 101]  # Different seeds to test
+    training_seeds = [42, 123, 456, 789, 101]  # Seeds for training
+    evaluation_seeds = [111, 222, 333, 444, 555]  # Different seeds for evaluation
     best_sa_result = float('inf')
     best_sa_barriers = None
     
@@ -284,7 +279,7 @@ def main():
         # Train DQN directly on the environment
         dqn_model = train_dqn_policy(rand_env, total_timesteps=20000)
         evaluate_dqn_policy(dqn_model, rand_env)
-        seed_results = evaluation(rand_env, dqn_model, seeds, random_barrier_set)
+        seed_results = evaluation(rand_env, dqn_model, evaluation_seeds, random_barrier_set)
         
         # Print overall results
         print("\nRandom Results:")
@@ -293,7 +288,7 @@ def main():
         print(f"Min: {min(seed_results):.2f}, Max: {max(seed_results):.2f}")
 
         if args.render:
-            render_best_solution(rand_env, seeds, dqn_model)
+            render_best_solution(rand_env, evaluation_seeds, dqn_model)
         del dqn_model
 
     if args.SA: 
@@ -302,7 +297,7 @@ def main():
         HJ = False
         fixed = False
         adaptive = False
-        best_sa_barriers, best_sa_env, sa_history = SA_training(base_env, barrier, seeds, action_sequence, HJ, fixed, adaptive)
+        best_sa_barriers, best_sa_env, sa_history = SA_training(base_env, barrier, training_seeds, action_sequence, HJ, fixed, adaptive)
         sa_time = time.time() - start_time
         print(f"\nSA runtime: {sa_time:.2f} seconds")
 
@@ -311,21 +306,24 @@ def main():
         HJ = True
         fixed = True
         adaptive = False
-        best_sa_fixed_hj_barriers, best_sa_fixed_hj_env, fixed_hj_history = SA_training(base_env, barrier, seeds, action_sequence, HJ, fixed, adaptive)
+        best_sa_fixed_hj_barriers, best_sa_fixed_hj_env, fixed_hj_history = SA_training(base_env, barrier, training_seeds, action_sequence, HJ, fixed, adaptive)
         fixed_hj_time = time.time() - start_time
         print(f"\nSA with Fixed Hooke-Jeeves runtime: {fixed_hj_time:.2f} seconds")
-
+        
         # Run SA with Adaptive HJ
         start_time = time.time()
         HJ = True
         fixed = False
         adaptive = True
-        best_sa_adaptive_hj_barriers, best_sa_adaptive_hj_env, adaptive_hj_history = SA_training(base_env, barrier, seeds, action_sequence, HJ, fixed, adaptive)
+        best_sa_adaptive_hj_barriers, best_sa_adaptive_hj_env, adaptive_hj_history = SA_training(base_env, barrier, training_seeds, action_sequence, HJ, fixed, adaptive)
         adaptive_hj_time = time.time() - start_time
-        print(f"\nSA with Adaptive Hooke-Jeeves runtime: {adaptive_hj_time:.2f} seconds")
+        print(f"\SA with Adaptive Hooke-Jeeves runtime: {adaptive_hj_time:.2f} seconds")
 
-        # Plot all three histories together
+        # Plot optimization history
         plot_optimization_history(sa_history, fixed_hj_history, adaptive_hj_history, 500)
+        
+        # Plot runtime analysis
+        plot_runtime_analysis(sa_time, fixed_hj_time, adaptive_hj_time)
 
         # Find the best solution among all three methods
         final_values = {
@@ -352,7 +350,7 @@ def main():
         evaluate_dqn_policy(dqn_model, best_sa_env)
 
         # Evaluate best SA barriers
-        seed_results = evaluation(best_sa_env, dqn_model, seeds, best_sa_barriers)
+        seed_results = evaluation(best_sa_env, dqn_model, evaluation_seeds, best_sa_barriers)
         
         # Print overall results
         print("\nSA Results:")
@@ -361,7 +359,7 @@ def main():
         print(f"Min: {min(seed_results):.2f}, Max: {max(seed_results):.2f}")
         
         if args.render:
-            render_best_solution(best_sa_env, seeds, dqn_model)
+            render_best_solution(best_sa_env, evaluation_seeds, dqn_model)
         del dqn_model
 
 
